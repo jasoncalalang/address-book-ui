@@ -1,0 +1,18 @@
+# Per-developer environment "dev3".
+# See k8s/overlays/dev2/kustomization.yaml for the recipe to add more.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev3
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: Ingress
+      name: address-book-ui
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: address-book-ui.dev3.lan

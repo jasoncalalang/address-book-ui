@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: address-book-ui
+  labels:
+    app: address-book-ui
+spec:
+  ingressClassName: traefik
+  rules:
+    # Host is patched per-environment by the kustomize overlays.
+    - host: address-book-ui.PLACEHOLDER.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: address-book-ui
+                port:
+                  number: 80

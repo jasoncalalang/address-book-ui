@@ -1,0 +1,28 @@
+# Per-developer environment "dev2".
+#
+# To add another developer (e.g. dev4):
+#   1. Copy this directory: cp -r k8s/overlays/dev2 k8s/overlays/dev4
+#   2. Replace every "dev2" below with "dev4"
+#   3. In jenkins-kube-reference/values.yaml, add the branch to includes(...)
+#      e.g. includes('main uat dev dev2 dev3 dev4')
+#   4. In Jenkinsfile.kube, add `branch 'dev4'` to the when blocks
+#   5. Push everything; the pipeline will auto-create the dev4 namespace.
+#
+# To remove a developer environment, see the README "Per-developer environments"
+# section in jenkins-kube-reference — manual cleanup is needed.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev2
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: Ingress
+      name: address-book-ui
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: address-book-ui.dev2.lan

@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: address-book-ui
+  labels:
+    app: address-book-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: address-book-ui
+  template:
+    metadata:
+      labels:
+        app: address-book-ui
+    spec:
+      containers:
+        - name: address-book-ui
+          # Placeholder image — `kubectl set image` in the pipeline replaces
+          # this with the tag produced by the current build.
+          image: localhost:5000/address-book-ui:placeholder
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            # Same-namespace short DNS form: works in any environment because
+            # the address-book Service is colocated in the same namespace as
+            # this UI deployment (dev, uat, or prod).
+            - name: API_UPSTREAM
+              value: "http://address-book"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi

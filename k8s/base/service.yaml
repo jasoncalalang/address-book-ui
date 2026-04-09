@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: address-book-ui
+  labels:
+    app: address-book-ui
+spec:
+  type: ClusterIP
+  selector:
+    app: address-book-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

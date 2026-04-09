@@ -1,0 +1,169 @@
+// Multibranch-aware Kubernetes pipeline for address-book-ui.
+//
+// Branches map to environments:
+//   main → prod namespace   address-book-ui.prod.lan
+//   uat  → uat  namespace   address-book-ui.uat.lan
+//   dev  → dev  namespace   address-book-ui.dev.lan
+//
+// Other branches (PR / feature) build + push images but do NOT deploy.
+// Promotion is just `git merge dev → uat → main` and push.
+//
+// Build work happens inside the Dockerfile (multi-stage with Node), so the
+// agent pod only needs jnlp + kaniko + kubectl.
+
+pipeline {
+    agent {
+        kubernetes {
+            inheritFrom 'kaniko'
+            defaultContainer 'jnlp'
+        }
+    }
+
+    environment {
+        REGISTRY_PUSH = 'registry.build.svc.cluster.local:5000'
+        REGISTRY_PULL = 'localhost:5000'
+        IMAGE_NAME = 'address-book-ui'
+        ENV_NAME = "${env.BRANCH_NAME == 'main' ? 'prod' : env.BRANCH_NAME ?: 'main'}"
+        IMAGE_TAG_PUSH = "${REGISTRY_PUSH}/${IMAGE_NAME}:${ENV_NAME}-${env.BUILD_NUMBER}"
+        IMAGE_TAG_PULL = "${REGISTRY_PULL}/${IMAGE_NAME}:${ENV_NAME}-${env.BUILD_NUMBER}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Kaniko Build & Push') {
+            steps {
+                container('kaniko') {
+                    sh """
+                        /kaniko/executor \\
+                            --context="\$(pwd)" \\
+                            --dockerfile=Dockerfile \\
+                            --destination=${IMAGE_TAG_PUSH} \\
+                            --insecure \\
+                            --skip-tls-verify
+                    """
+                }
+            }
+        }
+
+        stage('Trivy Scan') {
+            steps {
+                container('trivy') {
+                    sh """
+                        mkdir -p trivy-report
+                        trivy image \
+                            --severity CRITICAL,HIGH \
+                            --format template \
+                            --template "@/contrib/html.tpl" \
+                            --output trivy-report/index.html \
+                            --insecure \
+                            ${IMAGE_TAG_PUSH}
+                    """
+                }
+                publishHTML(target: [
+                    allowMissing: true,
+                    alwaysLinkToLastBuild: true,
+                    keepAll: true,
+                    reportDir: 'trivy-report',
+                    reportFiles: 'index.html',
+                    reportName: 'Trivy Vulnerability Report'
+                ])
+                container('trivy') {
+                    sh """
+                        trivy image \
+                            --exit-code 1 \
+                            --severity CRITICAL,HIGH \
+                            --format table \
+                            --insecure \
+                            --skip-db-update \
+                            ${IMAGE_TAG_PUSH}
+                    """
+                }
+            }
+        }
+
+        stage('Deploy') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'uat'
+                    branch 'dev'
+                    // ── Per-developer environments ────────────────────────
+                    // To add a new dev environment (e.g. dev4):
+                    //   1. Add `branch 'dev4'` to BOTH this when block AND
+                    //      the Health Check when block below.
+                    //   2. Copy k8s/overlays/dev2 → k8s/overlays/dev4 and
+                    //      replace every "dev2" with "dev4".
+                    //   3. Add 'dev4' to includes(...) in
+                    //      jenkins-kube-reference/values.yaml seed job.
+                    //   4. Push. The pipeline auto-creates the dev4 namespace.
+                    branch 'dev2'
+                    branch 'dev3'
+                    // ── End per-developer environments ────────────────────
+                }
+            }
+            steps {
+                container('kubectl') {
+                    sh """
+                        # Idempotent namespace creation — works for static envs
+                        # (dev/uat/prod, pre-existing) and for new per-dev envs
+                        # (dev2/dev3/..., created on first deploy).
+                        kubectl create namespace ${ENV_NAME} --dry-run=client -o yaml | kubectl apply -f -
+
+                        kubectl apply -k k8s/overlays/${ENV_NAME}
+                        kubectl -n ${ENV_NAME} set image deployment/address-book-ui address-book-ui=${IMAGE_TAG_PULL}
+                        kubectl -n ${ENV_NAME} rollout status deployment/address-book-ui --timeout=180s
+                    """
+                }
+            }
+        }
+
+        stage('Health Check') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'uat'
+                    branch 'dev'
+                    // Keep this list in sync with the Deploy stage above.
+                    branch 'dev2'
+                    branch 'dev3'
+                }
+            }
+            steps {
+                container('jnlp') {
+                    sh """
+                        echo "Waiting for address-book-ui in '${ENV_NAME}' to respond on /healthz..."
+                        for i in \$(seq 1 30); do
+                            if curl -sf http://address-book-ui.${ENV_NAME}.svc.cluster.local/healthz > /dev/null 2>&1; then
+                                echo "UI BFF is healthy!"
+                                exit 0
+                            fi
+                            sleep 2
+                        done
+                        echo "Health check failed after 60 seconds"
+                        exit 1
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                if (['main', 'uat', 'dev'].contains(env.BRANCH_NAME)) {
+                    echo "Build ${env.BUILD_NUMBER} deployed to '${ENV_NAME}' namespace. Image: ${IMAGE_TAG_PULL}"
+                } else {
+                    echo "Build ${env.BUILD_NUMBER} on branch '${env.BRANCH_NAME}' produced image ${IMAGE_TAG_PUSH} (not deployed)"
+                }
+            }
+        }
+        failure {
+            echo 'Pipeline failed. Check the console output for details.'
+        }
+    }
+}

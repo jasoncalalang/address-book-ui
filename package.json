@@ -1,0 +1,33 @@
+{
+  "name": "address-book-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "React + Vite UI for the address-book API, backed by an Express BFF that proxies API calls to the upstream Spring Boot service via cluster DNS.",
+  "scripts": {
+    "dev:client": "vite",
+    "dev:server": "node --watch server/index.js",
+    "dev": "concurrently -n client,bff -c cyan,magenta \"npm run dev:client\" \"npm run dev:server\"",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "start": "node server/index.js",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "dependencies": {
+    "express": "^4.21.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  }
+}
