@@ -7,6 +7,7 @@
 # upstream Spring Boot service via cluster DNS.
 
 FROM node:22-alpine AS build
+RUN apk add --no-cache --upgrade libcrypto3 libssl3 libpng zlib
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -15,6 +16,9 @@ COPY src ./src
 RUN npm run build
 
 FROM node:22-alpine
+RUN apk add --no-cache --upgrade libcrypto3 libssl3 libpng zlib && \
+    wget -qO- https://registry.npmjs.org/picomatch/-/picomatch-4.0.4.tgz | \
+    tar xz -C /usr/local/lib/node_modules/npm/node_modules/picomatch --strip-components=1
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000
